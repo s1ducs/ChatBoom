@@ -21,6 +21,11 @@
         video {
             object-fit: cover;
         }
+        .video-container {
+            aspect-ratio: 16/9;
+            width: 100%;
+            max-width: 640px;
+        }
         .pulse-sync {
             animation: pulse 2s infinite;
         }
@@ -67,44 +72,58 @@
         const Cloud = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>;
         const RefreshCw = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>;
 
-        // Улучшенное хранилище с автоматической синхронизацией
+        // Упрощенное хранилище с принудительной синхронизацией
         const storage = {
-            gistId: null,
-            token: null,
-            isInitialized: false,
-            lastSync: null,
+            // Базовая версия данных для синхронизации
+            data: {
+                users: [],
+                servers: [],
+                messages: {},
+                dmMessages: {},
+                activeVoiceChannels: {},
+                userProfiles: {}
+            },
             
-            // Инициализация с автоматическим поиском существующего gist
-            init: async (token) => {
-                storage.token = token;
-                
-                try {
-                    // Сначала ищем существующий gist
-                    const response = await fetch('https://api.github.com/gists', {
-                        headers: {
-                            'Authorization': `token ${token}`
-                        }
-                    });
-                    
-                    if (response.ok) {
-                        const gists = await response.json();
-                        // Ищем gist с описанием ChatHub
-                        const chatHubGist = gists.find(gist => 
-                            gist.description && gist.description.includes('ChatHub Online Database')
-                        );
-                        
-                        if (chatHubGist) {
-                            storage.gistId = chatHubGist.id;
-                            localStorage.setItem('gistId', chatHubGist.id);
-                            localStorage.setItem('githubToken', token);
-                            storage.isInitialized = true;
-                            storage.lastSync = Date.now();
-                            return { success: true, isNew: false };
-                        }
+            // Инициализация
+            init: () => {
+                // Загружаем данные из localStorage
+                const savedData = localStorage.getItem('chathub_data');
+                if (savedData) {
+                    try {
+                        storage.data = JSON.parse(savedData);
+                    } catch (e) {
+                        console.log('Error loading data, using defaults');
                     }
+                }
+                
+                // Загружаем токен GitHub если есть
+                const token = localStorage.getItem('githubToken');
+                if (token) {
+                    storage.token = token;
+                }
+                
+                return true;
+            },
+            
+            // Сохранение всех данных
+            saveAllData: () => {
+                localStorage.setItem('chathub_data', JSON.stringify(storage.data));
+                
+                // Если есть токен GitHub, пытаемся синхронизировать с Gist
+                if (storage.token && storage.gistId) {
+                    storage.syncToGist();
+                }
+                
+                return true;
+            },
+            
+            // Создание Gist на GitHub
+            createGist: async (token) => {
+                try {
+                    storage.token = token;
+                    localStorage.setItem('githubToken', token);
                     
-                    // Если не нашли, создаем новый
-                    const createResponse = await fetch('https://api.github.com/gists', {
+                    const response = await fetch('https://api.github.com/gists', {
                         method: 'POST',
                         headers: {
                             'Authorization': `token ${token}`,
@@ -114,211 +133,78 @@
                             description: 'ChatHub Online Database',
                             public: false,
                             files: {
-                                'data.json': {
-                                    content: JSON.stringify({
-                                        users: [],
-                                        servers: [],
-                                        messages: {},
-                                        dmMessages: {},
-                                        activeVoiceChannels: {},
-                                        profiles: {}
-                                    })
+                                'chathub_data.json': {
+                                    content: JSON.stringify(storage.data)
                                 }
                             }
                         })
                     });
                     
-                    if (createResponse.ok) {
-                        const data = await createResponse.json();
-                        storage.gistId = data.id;
-                        localStorage.setItem('gistId', data.id);
-                        localStorage.setItem('githubToken', token);
-                        storage.isInitialized = true;
-                        storage.lastSync = Date.now();
+                    if (response.ok) {
+                        const gistData = await response.json();
+                        storage.gistId = gistData.id;
+                        localStorage.setItem('gistId', gistData.id);
                         return { success: true, isNew: true };
+                    } else {
+                        return { success: false, error: 'Failed to create gist' };
                     }
-                    
-                    return { success: false, error: 'Failed to create gist' };
                 } catch (error) {
-                    console.error('GitHub storage init error:', error);
+                    console.error('Gist creation error:', error);
                     return { success: false, error: error.message };
                 }
             },
-
-            // Автоматическая синхронизация - всегда сначала пробует GitHub, потом localStorage
-            get: async (key) => {
-                // Сначала пробуем получить из GitHub
-                if (storage.isInitialized && storage.gistId && storage.token) {
-                    try {
-                        const response = await fetch(`https://api.github.com/gists/${storage.gistId}`, {
-                            headers: {
-                                'Authorization': `token ${storage.token}`
-                            }
-                        });
-                        
-                        if (response.ok) {
-                            const gist = await response.json();
-                            const content = JSON.parse(gist.files['data.json'].content);
-                            const value = content[key];
-                            
-                            if (value !== undefined) {
-                                // Сохраняем в localStorage как кэш
-                                localStorage.setItem(key, JSON.stringify(value));
-                                storage.lastSync = Date.now();
-                                return { value: JSON.stringify(value) };
-                            }
-                        }
-                    } catch (error) {
-                        console.log('Failed to fetch from GitHub, using local storage');
-                    }
-                }
-                
-                // Fallback на localStorage
-                const localValue = localStorage.getItem(key);
-                return localValue ? { value: localValue } : null;
-            },
-
-            set: async (key, value) => {
-                const parsedValue = JSON.parse(value);
-                
-                // Всегда сохраняем в localStorage
-                localStorage.setItem(key, value);
-                
-                // Пытаемся сохранить в GitHub
-                if (storage.isInitialized && storage.gistId && storage.token) {
-                    try {
-                        // Сначала получаем текущие данные
-                        const response = await fetch(`https://api.github.com/gists/${storage.gistId}`, {
-                            headers: {
-                                'Authorization': `token ${storage.token}`
-                            }
-                        });
-                        
-                        if (response.ok) {
-                            const gist = await response.json();
-                            const content = JSON.parse(gist.files['data.json'].content);
-                            
-                            // Обновляем данные
-                            content[key] = parsedValue;
-                            
-                            // Отправляем обновление
-                            await fetch(`https://api.github.com/gists/${storage.gistId}`, {
-                                method: 'PATCH',
-                                headers: {
-                                    'Authorization': `token ${storage.token}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    files: {
-                                        'data.json': {
-                                            content: JSON.stringify(content)
-                                        }
-                                    }
-                                })
-                            });
-                            
-                            storage.lastSync = Date.now();
-                        }
-                    } catch (error) {
-                        console.log('Failed to save to GitHub, data saved locally only');
-                    }
-                }
-                
-                return { key, value };
-            },
-
-            delete: async (key) => {
-                localStorage.removeItem(key);
-                
-                if (storage.isInitialized && storage.gistId && storage.token) {
-                    try {
-                        const response = await fetch(`https://api.github.com/gists/${storage.gistId}`, {
-                            headers: {
-                                'Authorization': `token ${storage.token}`
-                            }
-                        });
-                        
-                        if (response.ok) {
-                            const gist = await response.json();
-                            const content = JSON.parse(gist.files['data.json'].content);
-                            
-                            delete content[key];
-                            
-                            await fetch(`https://api.github.com/gists/${storage.gistId}`, {
-                                method: 'PATCH',
-                                headers: {
-                                    'Authorization': `token ${storage.token}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    files: {
-                                        'data.json': {
-                                            content: JSON.stringify(content)
-                                        }
-                                    }
-                                })
-                            });
-                            
-                            storage.lastSync = Date.now();
-                        }
-                    } catch (error) {
-                        console.log('Failed to delete from GitHub');
-                    }
-                }
-                
-                return { key, deleted: true };
-            },
-
-            // Синхронизация всех локальных данных с GitHub
-            syncAllData: async () => {
-                if (!storage.isInitialized || !storage.gistId || !storage.token) {
-                    return false;
-                }
-
+            
+            // Поиск существующего Gist
+            findExistingGist: async (token) => {
                 try {
-                    // Получаем текущие данные из GitHub
-                    const response = await fetch(`https://api.github.com/gists/${storage.gistId}`, {
+                    const response = await fetch('https://api.github.com/gists', {
                         headers: {
-                            'Authorization': `token ${storage.token}`
+                            'Authorization': `token ${token}`
                         }
                     });
                     
                     if (response.ok) {
-                        const gist = await response.json();
-                        const remoteData = JSON.parse(gist.files['data.json'].content);
+                        const gists = await response.json();
+                        const chatHubGist = gists.find(gist => 
+                            gist.description && gist.description.includes('ChatHub Online Database')
+                        );
                         
-                        // Обновляем localStorage данными из GitHub
-                        Object.keys(remoteData).forEach(key => {
-                            localStorage.setItem(key, JSON.stringify(remoteData[key]));
-                        });
-                        
-                        storage.lastSync = Date.now();
-                        return true;
+                        if (chatHubGist) {
+                            storage.gistId = chatHubGist.id;
+                            localStorage.setItem('gistId', chatHubGist.id);
+                            
+                            // Загружаем данные из Gist
+                            const gistResponse = await fetch(`https://api.github.com/gists/${chatHubGist.id}`, {
+                                headers: {
+                                    'Authorization': `token ${token}`
+                                }
+                            });
+                            
+                            if (gistResponse.ok) {
+                                const gistData = await gistResponse.json();
+                                const remoteData = JSON.parse(gistData.files['chathub_data.json'].content);
+                                
+                                // Объединяем данные (приоритет у удаленных)
+                                storage.data = { ...storage.data, ...remoteData };
+                                storage.saveAllData();
+                            }
+                            
+                            return { success: true, isNew: false };
+                        }
                     }
+                    
+                    return { success: false, error: 'No existing gist found' };
                 } catch (error) {
-                    console.error('Sync error:', error);
+                    console.error('Gist search error:', error);
+                    return { success: false, error: error.message };
                 }
-                
-                return false;
             },
             
-            // Принудительная синхронизация всех локальных данных на GitHub
-            pushAllData: async () => {
-                if (!storage.isInitialized || !storage.gistId || !storage.token) {
-                    return false;
-                }
-
+            // Синхронизация с Gist
+            syncToGist: async () => {
+                if (!storage.token || !storage.gistId) return false;
+                
                 try {
-                    // Собираем все данные из localStorage
-                    const allData = {
-                        users: JSON.parse(localStorage.getItem('users') || '[]'),
-                        servers: JSON.parse(localStorage.getItem('servers') || '[]'),
-                        messages: JSON.parse(localStorage.getItem('messages') || '{}'),
-                        dmMessages: JSON.parse(localStorage.getItem('dmMessages') || '{}'),
-                        activeVoiceChannels: JSON.parse(localStorage.getItem('activeVoiceChannels') || '{}')
-                    };
-                    
-                    // Отправляем на GitHub
                     await fetch(`https://api.github.com/gists/${storage.gistId}`, {
                         method: 'PATCH',
                         headers: {
@@ -327,21 +213,84 @@
                         },
                         body: JSON.stringify({
                             files: {
-                                'data.json': {
-                                    content: JSON.stringify(allData)
+                                'chathub_data.json': {
+                                    content: JSON.stringify(storage.data)
                                 }
                             }
                         })
                     });
                     
-                    storage.lastSync = Date.now();
                     return true;
                 } catch (error) {
-                    console.error('Push error:', error);
+                    console.error('Sync error:', error);
                     return false;
                 }
+            },
+            
+            // Загрузка из Gist
+            syncFromGist: async () => {
+                if (!storage.token || !storage.gistId) return false;
+                
+                try {
+                    const response = await fetch(`https://api.github.com/gists/${storage.gistId}`, {
+                        headers: {
+                            'Authorization': `token ${storage.token}`
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        const gistData = await response.json();
+                        const remoteData = JSON.parse(gistData.files['chathub_data.json'].content);
+                        
+                        // Объединяем данные (приоритет у удаленных)
+                        storage.data = { ...storage.data, ...remoteData };
+                        storage.saveAllData();
+                        
+                        return true;
+                    }
+                } catch (error) {
+                    console.error('Sync from error:', error);
+                }
+                
+                return false;
+            },
+            
+            // Базовые операции с данными
+            get: (key) => {
+                return storage.data[key];
+            },
+            
+            set: (key, value) => {
+                storage.data[key] = value;
+                storage.saveAllData();
+                return { key, value };
+            },
+            
+            // Специальные методы для работы с пользователями
+            findUser: (username) => {
+                return storage.data.users.find(u => u.username === username);
+            },
+            
+            addUser: (user) => {
+                if (!storage.findUser(user.username)) {
+                    storage.data.users.push(user);
+                    storage.saveAllData();
+                    return true;
+                }
+                return false;
+            },
+            
+            // Полная синхронизация
+            fullSync: async () => {
+                if (storage.token && storage.gistId) {
+                    await storage.syncFromGist();
+                }
+                return storage.data;
             }
         };
+
+        // Инициализация хранилища при загрузке
+        storage.init();
 
         const ChatApp = () => {
           const [currentView, setCurrentView] = useState('login');
@@ -374,6 +323,8 @@
           const [showSyncModal, setShowSyncModal] = useState(false);
           const [isSyncing, setIsSyncing] = useState(false);
           const [lastSyncTime, setLastSyncTime] = useState(null);
+          const [inDMCall, setInDMCall] = useState(false);
+          const [dmCallWith, setDmCallWith] = useState(null);
           const messagesEndRef = useRef(null);
           const localVideoRef = useRef(null);
           const localStreamRef = useRef(null);
@@ -397,7 +348,6 @@
               setSyncToken(token);
               storage.token = token;
               storage.gistId = gistId;
-              storage.isInitialized = true;
               setSyncEnabled(true);
               
               // Автоматическая синхронизация при загрузке приложения
@@ -409,14 +359,20 @@
             setIsSyncing(true);
             
             try {
-              const result = await storage.init(token);
+              // Сначала ищем существующий gist
+              let result = await storage.findExistingGist(token);
+              
+              // Если не нашли, создаем новый
+              if (!result.success) {
+                result = await storage.createGist(token);
+              }
               
               if (result.success) {
                 setSyncToken(token);
                 setSyncEnabled(true);
                 setShowSyncModal(false);
                 
-                // Синхронизируем данные сразу после включения
+                // Синхронизируем данные
                 await syncWithGitHub();
                 
                 addNotification(
@@ -440,34 +396,19 @@
             
             setIsSyncing(true);
             try {
-              const success = await storage.syncAllData();
-              if (success) {
-                // Перезагружаем все данные после синхронизации
-                await loadServers();
-                await loadFriends();
-                await loadMessages();
-                await loadDMMessages();
-                setLastSyncTime(new Date().toLocaleTimeString());
-              }
+              await storage.fullSync();
+              setLastSyncTime(new Date().toLocaleTimeString());
+              
+              // Перезагружаем все данные
+              await loadServers();
+              await loadFriends();
+              await loadMessages();
+              await loadDMMessages();
+              await updateVoiceChannels();
+              
+              addNotification('Данные синхронизированы!', 'success');
             } catch (error) {
-              console.log('Sync completed with local data');
-            } finally {
-              setIsSyncing(false);
-            }
-          };
-
-          const pushToGitHub = async () => {
-            if (!syncEnabled) return;
-            
-            setIsSyncing(true);
-            try {
-              const success = await storage.pushAllData();
-              if (success) {
-                setLastSyncTime(new Date().toLocaleTimeString());
-                addNotification('Данные отправлены на GitHub!', 'success');
-              }
-            } catch (error) {
-              addNotification('Ошибка отправки данных на GitHub', 'error');
+              console.log('Sync error:', error);
             } finally {
               setIsSyncing(false);
             }
@@ -480,15 +421,14 @@
             setSyncEnabled(false);
             storage.token = null;
             storage.gistId = null;
-            storage.isInitialized = false;
             addNotification('Синхронизация отключена', 'info');
           };
 
           const checkRememberedUser = async () => {
             try {
-              const remembered = await storage.get('rememberedUser');
+              const remembered = localStorage.getItem('rememberedUser');
               if (remembered) {
-                const userData = JSON.parse(remembered.value);
+                const userData = JSON.parse(remembered);
                 setCurrentUser(userData);
                 setCurrentView('app');
               }
@@ -498,24 +438,10 @@
           };
 
           const loadData = async () => {
-            try {
-              const usersData = await storage.get('users');
-              if (!usersData) await storage.set('users', JSON.stringify([]));
-              
-              const serversData = await storage.get('servers');
-              if (!serversData) await storage.set('servers', JSON.stringify([]));
-              
-              const messagesData = await storage.get('messages');
-              if (!messagesData) await storage.set('messages', JSON.stringify({}));
-
-              const dmData = await storage.get('dmMessages');
-              if (!dmData) await storage.set('dmMessages', JSON.stringify({}));
-
-              const activeVCData = await storage.get('activeVoiceChannels');
-              if (activeVCData) setActiveVoiceChannels(JSON.parse(activeVCData.value));
-            } catch (error) {
-              console.log('Initializing storage');
-            }
+            // Данные уже загружены в storage при инициализации
+            setMessages(storage.get('messages') || {});
+            setDMMessages(storage.get('dmMessages') || {});
+            setActiveVoiceChannels(storage.get('activeVoiceChannels') || {});
           };
 
           const addNotification = (message, type = 'info') => {
@@ -536,13 +462,13 @@
             scrollToBottom();
           }, [messages, dmMessages, selectedChannel, selectedDM]);
 
-          // Автоматическая синхронизация каждые 10 секунд
+          // Автоматическая синхронизация каждые 30 секунд
           useEffect(() => {
             if (!syncEnabled || !currentUser) return;
             
             const interval = setInterval(async () => {
               await syncWithGitHub();
-            }, 10000);
+            }, 30000);
 
             return () => clearInterval(interval);
           }, [syncEnabled, currentUser]);
@@ -557,76 +483,51 @@
               await loadFriends();
               await loadDMMessages();
               await updateVoiceChannels();
-            }, 2000);
+            }, 3000);
 
             return () => clearInterval(interval);
           }, [currentUser, selectedServer, selectedChannel, selectedDM]);
 
           const updateVoiceChannels = async () => {
-            try {
-              const result = await storage.get('activeVoiceChannels');
-              if (result) {
-                const activeChannels = JSON.parse(result.value);
-                setActiveVoiceChannels(activeChannels);
-                
-                if (selectedChannel && selectedChannel.type === 'voice' && inVoiceChat) {
-                  const channelKey = `${selectedServer.id}-${selectedChannel.id}`;
-                  if (activeChannels[channelKey]) {
-                    setVoiceChannelUsers(activeChannels[channelKey]);
-                  }
-                }
+            const activeChannels = storage.get('activeVoiceChannels') || {};
+            setActiveVoiceChannels(activeChannels);
+            
+            if (selectedChannel && selectedChannel.type === 'voice' && inVoiceChat) {
+              const channelKey = `${selectedServer.id}-${selectedChannel.id}`;
+              if (activeChannels[channelKey]) {
+                setVoiceChannelUsers(activeChannels[channelKey]);
               }
-            } catch (error) {
-              console.log('Error updating voice channels');
+            }
+            
+            if (inDMCall && dmCallWith) {
+              const dmKey = `dm-${[currentUser.username, dmCallWith].sort().join('-')}`;
+              if (activeChannels[dmKey]) {
+                setVoiceChannelUsers(activeChannels[dmKey]);
+              }
             }
           };
 
           const loadServers = async () => {
-            try {
-              const result = await storage.get('servers');
-              if (result) {
-                const allServers = JSON.parse(result.value);
-                const userServers = allServers.filter(s => s.members.includes(currentUser.username));
-                setServers(userServers);
-              }
-            } catch (error) {
-              console.log('No servers yet');
-            }
+            const allServers = storage.get('servers') || [];
+            const userServers = allServers.filter(s => s.members.includes(currentUser.username));
+            setServers(userServers);
           };
 
           const loadMessages = async () => {
             if (!selectedChannel) return;
-            try {
-              const result = await storage.get('messages');
-              if (result) setMessages(JSON.parse(result.value));
-            } catch (error) {
-              console.log('No messages yet');
-            }
+            setMessages(storage.get('messages') || {});
           };
 
           const loadDMMessages = async () => {
-            try {
-              const result = await storage.get('dmMessages');
-              if (result) setDMMessages(JSON.parse(result.value));
-            } catch (error) {
-              console.log('No DM messages yet');
-            }
+            setDMMessages(storage.get('dmMessages') || {});
           };
 
           const loadFriends = async () => {
-            try {
-              const result = await storage.get(`friends-${currentUser.username}`);
-              if (result) setFriends(JSON.parse(result.value));
-            } catch (error) {
-              setFriends([]);
-            }
-
-            try {
-              const reqResult = await storage.get(`friendrequests-${currentUser.username}`);
-              if (reqResult) setFriendRequests(JSON.parse(reqResult.value));
-            } catch (error) {
-              setFriendRequests([]);
-            }
+            const friends = storage.get(`friends-${currentUser.username}`) || [];
+            setFriends(friends);
+            
+            const requests = storage.get(`friendrequests-${currentUser.username}`) || [];
+            setFriendRequests(requests);
           };
 
           const handleRegister = async (e) => {
@@ -636,8 +537,7 @@
             const password = e.target.password.value;
 
             try {
-              const result = await storage.get('users');
-              const users = result ? JSON.parse(result.value) : [];
+              const users = storage.get('users') || [];
               
               if (users.find(u => u.username === username)) {
                 alert('Пользователь уже существует');
@@ -646,13 +546,13 @@
 
               const newUser = { username, email, password, avatar: '', status: 'online' };
               users.push(newUser);
-              await storage.set('users', JSON.stringify(users));
+              storage.set('users', users);
               
               setCurrentUser(newUser);
               setProfileData({ avatar: '', status: 'online' });
               
               if (rememberMe) {
-                await storage.set('rememberedUser', JSON.stringify(newUser));
+                localStorage.setItem('rememberedUser', JSON.stringify(newUser));
               }
               
               await loadServers();
@@ -671,8 +571,7 @@
             const remember = e.target.remember ? e.target.remember.checked : false;
 
             try {
-              const result = await storage.get('users');
-              const users = result ? JSON.parse(result.value) : [];
+              const users = storage.get('users') || [];
               const user = users.find(u => u.username === username && u.password === password);
               
               if (user) {
@@ -680,9 +579,9 @@
                 setProfileData({ avatar: user.avatar || '', status: user.status || 'online' });
                 
                 if (remember) {
-                  await storage.set('rememberedUser', JSON.stringify(user));
+                  localStorage.setItem('rememberedUser', JSON.stringify(user));
                 } else {
-                  await storage.delete('rememberedUser');
+                  localStorage.removeItem('rememberedUser');
                 }
                 
                 await loadServers();
@@ -709,6 +608,10 @@
               leaveVoiceChannel();
             }
             
+            if (inDMCall) {
+              leaveDMCall();
+            }
+            
             setCurrentUser(null);
             setServers([]);
             setSelectedServer(null);
@@ -720,18 +623,18 @@
 
           const updateProfile = async () => {
             try {
-              const result = await storage.get('users');
-              const users = result ? JSON.parse(result.value) : [];
+              const users = storage.get('users') || [];
               const userIndex = users.findIndex(u => u.username === currentUser.username);
               
               if (userIndex !== -1) {
                 users[userIndex] = { ...users[userIndex], ...profileData };
-                await storage.set('users', JSON.stringify(users));
+                storage.set('users', users);
                 setCurrentUser(users[userIndex]);
                 
-                const remembered = await storage.get('rememberedUser');
+                // Обновляем запомненного пользователя
+                const remembered = localStorage.getItem('rememberedUser');
                 if (remembered) {
-                  await storage.set('rememberedUser', JSON.stringify(users[userIndex]));
+                  localStorage.setItem('rememberedUser', JSON.stringify(users[userIndex]));
                 }
                 
                 setShowProfileSettings(false);
@@ -747,8 +650,7 @@
             if (!name) return;
 
             try {
-              const result = await storage.get('servers');
-              const allServers = result ? JSON.parse(result.value) : [];
+              const allServers = storage.get('servers') || [];
               
               const serverId = Date.now().toString();
               allServers.push({
@@ -762,7 +664,7 @@
                 ]
               });
 
-              await storage.set('servers', JSON.stringify(allServers));
+              storage.set('servers', allServers);
               await loadServers();
               addNotification(`Сервер "${name}" создан!`, 'success');
             } catch (error) {
@@ -775,8 +677,7 @@
             if (!name) return;
 
             try {
-              const result = await storage.get('servers');
-              const allServers = result ? JSON.parse(result.value) : [];
+              const allServers = storage.get('servers') || [];
               const serverIndex = allServers.findIndex(s => s.id === selectedServer.id);
               
               if (serverIndex !== -1) {
@@ -786,7 +687,7 @@
                   type
                 };
                 allServers[serverIndex].channels.push(newChannel);
-                await storage.set('servers', JSON.stringify(allServers));
+                storage.set('servers', allServers);
                 await loadServers();
                 addNotification(`Канал "${name}" создан!`, 'success');
               }
@@ -799,13 +700,12 @@
             if (!confirm('Удалить канал?')) return;
 
             try {
-              const result = await storage.get('servers');
-              const allServers = result ? JSON.parse(result.value) : [];
+              const allServers = storage.get('servers') || [];
               const serverIndex = allServers.findIndex(s => s.id === selectedServer.id);
               
               if (serverIndex !== -1) {
                 allServers[serverIndex].channels = allServers[serverIndex].channels.filter(c => c.id !== channelId);
-                await storage.set('servers', JSON.stringify(allServers));
+                storage.set('servers', allServers);
                 if (selectedChannel?.id === channelId) setSelectedChannel(null);
                 await loadServers();
                 addNotification('Канал удален', 'info');
@@ -830,8 +730,7 @@
             if (!selectedServer) return;
             
             try {
-              const result = await storage.get('dmMessages');
-              const allDMs = result ? JSON.parse(result.value) : {};
+              const allDMs = storage.get('dmMessages') || {};
               
               const dmKey = [currentUser.username, friendUsername].sort().join('-');
               if (!allDMs[dmKey]) allDMs[dmKey] = [];
@@ -847,7 +746,7 @@
               };
 
               allDMs[dmKey].push(inviteMessage);
-              await storage.set('dmMessages', JSON.stringify(allDMs));
+              storage.set('dmMessages', allDMs);
               setDMMessages(allDMs);
               addNotification(`Приглашение отправлено ${friendUsername}!`, 'success');
             } catch (error) {
@@ -857,13 +756,12 @@
 
           const handleInviteAccept = async (serverId, serverName) => {
             try {
-              const result = await storage.get('servers');
-              const allServers = result ? JSON.parse(result.value) : [];
+              const allServers = storage.get('servers') || [];
               const serverIndex = allServers.findIndex(s => s.id === serverId);
               
               if (serverIndex !== -1 && !allServers[serverIndex].members.includes(currentUser.username)) {
                 allServers[serverIndex].members.push(currentUser.username);
-                await storage.set('servers', JSON.stringify(allServers));
+                storage.set('servers', allServers);
                 await loadServers();
                 addNotification(`Вы присоединились к серверу "${serverName}"!`, 'success');
               }
@@ -874,13 +772,12 @@
 
           const joinServerByInvite = async (serverId) => {
             try {
-              const result = await storage.get('servers');
-              const allServers = result ? JSON.parse(result.value) : [];
+              const allServers = storage.get('servers') || [];
               const serverIndex = allServers.findIndex(s => s.id === serverId);
               
               if (serverIndex !== -1 && !allServers[serverIndex].members.includes(currentUser.username)) {
                 allServers[serverIndex].members.push(currentUser.username);
-                await storage.set('servers', JSON.stringify(allServers));
+                storage.set('servers', allServers);
                 await loadServers();
                 addNotification('Вы присоединились к серверу!', 'success');
               }
@@ -903,8 +800,7 @@
 
             try {
               if (selectedChannel) {
-                const result = await storage.get('messages');
-                const allMessages = result ? JSON.parse(result.value) : {};
+                const allMessages = storage.get('messages') || {};
                 
                 const channelKey = `${selectedServer.id}-${selectedChannel.id}`;
                 if (!allMessages[channelKey]) allMessages[channelKey] = [];
@@ -916,11 +812,10 @@
                   timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
                 });
 
-                await storage.set('messages', JSON.stringify(allMessages));
+                storage.set('messages', allMessages);
                 setMessages(allMessages);
               } else if (selectedDM) {
-                const result = await storage.get('dmMessages');
-                const allDMs = result ? JSON.parse(result.value) : {};
+                const allDMs = storage.get('dmMessages') || {};
                 
                 const dmKey = [currentUser.username, selectedDM].sort().join('-');
                 if (!allDMs[dmKey]) allDMs[dmKey] = [];
@@ -932,7 +827,7 @@
                   timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
                 });
 
-                await storage.set('dmMessages', JSON.stringify(allDMs));
+                storage.set('dmMessages', allDMs);
                 setDMMessages(allDMs);
               }
               
@@ -946,8 +841,7 @@
             if (!searchUser.trim()) return;
 
             try {
-              const result = await storage.get('users');
-              const users = result ? JSON.parse(result.value) : [];
+              const users = storage.get('users') || [];
               const targetUser = users.find(u => u.username === searchUser);
 
               if (!targetUser) {
@@ -960,24 +854,17 @@
                 return;
               }
 
-              try {
-                const reqResult = await storage.get(`friendrequests-${targetUser.username}`);
-                const requests = reqResult ? JSON.parse(reqResult.value) : [];
-                
-                if (requests.includes(currentUser.username)) {
-                  alert('Запрос уже отправлен');
-                  return;
-                }
-
-                requests.push(currentUser.username);
-                await storage.set(`friendrequests-${targetUser.username}`, JSON.stringify(requests));
-                addNotification(`Запрос в друзья отправлен ${searchUser}!`, 'success');
-                setSearchUser('');
-              } catch (error) {
-                await storage.set(`friendrequests-${targetUser.username}`, JSON.stringify([currentUser.username]));
-                addNotification(`Запрос в друзья отправлен ${searchUser}!`, 'success');
-                setSearchUser('');
+              const requests = storage.get(`friendrequests-${targetUser.username}`) || [];
+              
+              if (requests.includes(currentUser.username)) {
+                alert('Запрос уже отправлен');
+                return;
               }
+
+              requests.push(currentUser.username);
+              storage.set(`friendrequests-${targetUser.username}`, requests);
+              addNotification(`Запрос в друзья отправлен ${searchUser}!`, 'success');
+              setSearchUser('');
             } catch (error) {
               alert('Ошибка отправки запроса');
             }
@@ -985,22 +872,20 @@
 
           const acceptFriendRequest = async (username) => {
             try {
-              const myFriends = friends.includes(username) ? friends : [...friends, username];
-              await storage.set(`friends-${currentUser.username}`, JSON.stringify(myFriends));
+              const myFriends = storage.get(`friends-${currentUser.username}`) || [];
+              if (!myFriends.includes(username)) {
+                myFriends.push(username);
+                storage.set(`friends-${currentUser.username}`, myFriends);
+              }
               
-              try {
-                const theirResult = await storage.get(`friends-${username}`);
-                const theirFriends = theirResult ? JSON.parse(theirResult.value) : [];
-                if (!theirFriends.includes(currentUser.username)) {
-                  theirFriends.push(currentUser.username);
-                  await storage.set(`friends-${username}`, JSON.stringify(theirFriends));
-                }
-              } catch (error) {
-                await storage.set(`friends-${username}`, JSON.stringify([currentUser.username]));
+              const theirFriends = storage.get(`friends-${username}`) || [];
+              if (!theirFriends.includes(currentUser.username)) {
+                theirFriends.push(currentUser.username);
+                storage.set(`friends-${username}`, theirFriends);
               }
 
               const updatedRequests = friendRequests.filter(r => r !== username);
-              await storage.set(`friendrequests-${currentUser.username}`, JSON.stringify(updatedRequests));
+              storage.set(`friendrequests-${currentUser.username}`, updatedRequests);
               await loadFriends();
               addNotification(`${username} теперь ваш друг!`, 'success');
             } catch (error) {
@@ -1010,7 +895,7 @@
 
           const declineFriendRequest = async (username) => {
             const updatedRequests = friendRequests.filter(r => r !== username);
-            await storage.set(`friendrequests-${currentUser.username}`, JSON.stringify(updatedRequests));
+            storage.set(`friendrequests-${currentUser.username}`, updatedRequests);
             setFriendRequests(updatedRequests);
             addNotification(`Запрос от ${username} отклонен`, 'info');
           };
@@ -1019,6 +904,71 @@
             setSelectedServer(null);
             setSelectedChannel(null);
             setSelectedDM(username);
+            setInDMCall(false);
+            setDmCallWith(null);
+          };
+
+          // Функции для личных звонков
+          const startDMCall = async (username) => {
+            setDmCallWith(username);
+            setInDMCall(true);
+            
+            const dmKey = `dm-${[currentUser.username, username].sort().join('-')}`;
+            const activeChannels = storage.get('activeVoiceChannels') || {};
+            
+            if (!activeChannels[dmKey]) {
+              activeChannels[dmKey] = [currentUser.username];
+            } else if (!activeChannels[dmKey].includes(currentUser.username)) {
+              activeChannels[dmKey].push(currentUser.username);
+            }
+            
+            storage.set('activeVoiceChannels', activeChannels);
+            setActiveVoiceChannels(activeChannels);
+            setVoiceChannelUsers(activeChannels[dmKey]);
+            
+            addNotification(`Звонок с ${username}`, 'success');
+            
+            try {
+              const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+              localStreamRef.current = stream;
+              if (localVideoRef.current) {
+                localVideoRef.current.srcObject = stream;
+              }
+              setIsVideoOn(true);
+            } catch (error) {
+              console.log('Media access denied');
+            }
+          };
+
+          const leaveDMCall = () => {
+            if (localStreamRef.current) {
+              localStreamRef.current.getTracks().forEach(track => track.stop());
+            }
+            if (screenStreamRef.current) {
+              screenStreamRef.current.getTracks().forEach(track => track.stop());
+            }
+            
+            if (dmCallWith) {
+              const dmKey = `dm-${[currentUser.username, dmCallWith].sort().join('-')}`;
+              const activeChannels = storage.get('activeVoiceChannels') || {};
+              
+              if (activeChannels[dmKey]) {
+                activeChannels[dmKey] = activeChannels[dmKey].filter(u => u !== currentUser.username);
+                if (activeChannels[dmKey].length === 0) {
+                  delete activeChannels[dmKey];
+                }
+                storage.set('activeVoiceChannels', activeChannels);
+                setActiveVoiceChannels(activeChannels);
+              }
+            }
+            
+            setInDMCall(false);
+            setDmCallWith(null);
+            setIsVideoOn(false);
+            setIsScreenSharing(false);
+            setIsMuted(false);
+            setVoiceChannelUsers([]);
+            addNotification('Звонок завершен', 'info');
           };
 
           const toggleVideo = async () => {
@@ -1046,7 +996,12 @@
           const toggleScreenShare = async () => {
             if (!isScreenSharing) {
               try {
-                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                const stream = await navigator.mediaDevices.getDisplayMedia({ 
+                  video: { 
+                    aspectRatio: 16/9,
+                    frameRate: 30 
+                  } 
+                });
                 screenStreamRef.current = stream;
                 setIsScreenSharing(true);
                 
@@ -1078,25 +1033,20 @@
             setInVoiceChat(true);
             
             const channelKey = `${selectedServer.id}-${selectedChannel.id}`;
-            try {
-              const result = await storage.get('activeVoiceChannels');
-              const activeChannels = result ? JSON.parse(result.value) : {};
-              
-              if (!activeChannels[channelKey]) {
-                activeChannels[channelKey] = [];
-              }
-              
-              if (!activeChannels[channelKey].includes(currentUser.username)) {
-                activeChannels[channelKey].push(currentUser.username);
-                await storage.set('activeVoiceChannels', JSON.stringify(activeChannels));
-                setActiveVoiceChannels(activeChannels);
-                setVoiceChannelUsers(activeChannels[channelKey]);
-              }
-              
-              addNotification(`Вы присоединились к ${selectedChannel.name}`, 'success');
-            } catch (error) {
-              console.log('Error joining voice channel');
+            const activeChannels = storage.get('activeVoiceChannels') || {};
+            
+            if (!activeChannels[channelKey]) {
+              activeChannels[channelKey] = [];
             }
+            
+            if (!activeChannels[channelKey].includes(currentUser.username)) {
+              activeChannels[channelKey].push(currentUser.username);
+              storage.set('activeVoiceChannels', activeChannels);
+              setActiveVoiceChannels(activeChannels);
+              setVoiceChannelUsers(activeChannels[channelKey]);
+            }
+            
+            addNotification(`Вы присоединились к ${selectedChannel.name}`, 'success');
             
             try {
               const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1116,7 +1066,16 @@
             
             if (selectedChannel) {
               const channelKey = `${selectedServer.id}-${selectedChannel.id}`;
-              removeUserFromVoiceChannel(channelKey, currentUser.username);
+              const activeChannels = storage.get('activeVoiceChannels') || {};
+              
+              if (activeChannels[channelKey]) {
+                activeChannels[channelKey] = activeChannels[channelKey].filter(u => u !== currentUser.username);
+                if (activeChannels[channelKey].length === 0) {
+                  delete activeChannels[channelKey];
+                }
+                storage.set('activeVoiceChannels', activeChannels);
+                setActiveVoiceChannels(activeChannels);
+              }
             }
             
             setInVoiceChat(false);
@@ -1125,24 +1084,6 @@
             setIsMuted(false);
             setVoiceChannelUsers([]);
             addNotification('Вы покинули голосовой канал', 'info');
-          };
-
-          const removeUserFromVoiceChannel = async (channelKey, username) => {
-            try {
-              const result = await storage.get('activeVoiceChannels');
-              const activeChannels = result ? JSON.parse(result.value) : {};
-              
-              if (activeChannels[channelKey]) {
-                activeChannels[channelKey] = activeChannels[channelKey].filter(u => u !== username);
-                if (activeChannels[channelKey].length === 0) {
-                  delete activeChannels[channelKey];
-                }
-                await storage.set('activeVoiceChannels', JSON.stringify(activeChannels));
-                setActiveVoiceChannels(activeChannels);
-              }
-            } catch (error) {
-              console.log('Error removing user from voice channel');
-            }
           };
 
           const toggleMute = () => {
@@ -1258,23 +1199,14 @@
                               </p>
                             )}
                           </div>
-                          <div className="flex space-x-2">
-                            <button 
-                              onClick={syncWithGitHub}
-                              disabled={isSyncing}
-                              className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50 flex items-center justify-center space-x-2"
-                            >
-                              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                              <span>{isSyncing ? 'Синхронизация...' : 'Синхронизировать'}</span>
-                            </button>
-                            <button 
-                              onClick={pushToGitHub}
-                              disabled={isSyncing}
-                              className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition disabled:opacity-50"
-                            >
-                              Отправить данные
-                            </button>
-                          </div>
+                          <button 
+                            onClick={syncWithGitHub}
+                            disabled={isSyncing}
+                            className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50 flex items-center justify-center space-x-2"
+                          >
+                            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                            <span>{isSyncing ? 'Синхронизация...' : 'Синхронизировать'}</span>
+                          </button>
                           <button 
                             onClick={disableSync}
                             className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition"
@@ -1440,23 +1372,14 @@
                             </p>
                           )}
                         </div>
-                        <div className="flex space-x-2">
-                          <button 
-                            onClick={syncWithGitHub}
-                            disabled={isSyncing}
-                            className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50 flex items-center justify-center space-x-2"
-                          >
-                            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                            <span>{isSyncing ? 'Синхронизация...' : 'Синхронизировать'}</span>
-                          </button>
-                          <button 
-                            onClick={pushToGitHub}
-                            disabled={isSyncing}
-                            className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition disabled:opacity-50"
-                          >
-                            Отправить данные
-                          </button>
-                        </div>
+                        <button 
+                          onClick={syncWithGitHub}
+                          disabled={isSyncing}
+                          className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50 flex items-center justify-center space-x-2"
+                        >
+                          <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                          <span>{isSyncing ? 'Синхронизация...' : 'Синхронизировать'}</span>
+                        </button>
                         <button 
                           onClick={disableSync}
                           className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition"
@@ -1623,14 +1546,14 @@
               )}
 
               <div className="w-20 bg-gray-950 flex flex-col items-center py-4 space-y-3">
-                <button onClick={() => { setSelectedServer(null); setSelectedChannel(null); setSelectedDM(null); }} className="w-14 h-14 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center hover:rounded-xl transition-all duration-200">
+                <button onClick={() => { setSelectedServer(null); setSelectedChannel(null); setSelectedDM(null); setInDMCall(false); }} className="w-14 h-14 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center hover:rounded-xl transition-all duration-200">
                   <Users />
                 </button>
                 
                 <div className="w-10 h-0.5 bg-gray-800 rounded-full" />
 
                 {servers.map(server => (
-                  <button key={server.id} onClick={() => { setSelectedServer(server); setSelectedChannel(server.channels[0]); setSelectedDM(null); }} className={`w-14 h-14 ${selectedServer?.id === server.id ? 'bg-indigo-600 rounded-xl' : 'bg-gray-800 rounded-3xl hover:rounded-xl hover:bg-indigo-700'} flex items-center justify-center text-white font-bold transition-all duration-200`}>
+                  <button key={server.id} onClick={() => { setSelectedServer(server); setSelectedChannel(server.channels[0]); setSelectedDM(null); setInDMCall(false); }} className={`w-14 h-14 ${selectedServer?.id === server.id ? 'bg-indigo-600 rounded-xl' : 'bg-gray-800 rounded-3xl hover:rounded-xl hover:bg-indigo-700'} flex items-center justify-center text-white font-bold transition-all duration-200`}>
                     {server.name[0].toUpperCase()}
                   </button>
                 ))}
@@ -1771,7 +1694,10 @@
                     <h3 className="text-gray-400 text-xs font-semibold uppercase mb-2">Все друзья — {friends.length}</h3>
                     {friends.map(friend => (
                       <div key={friend} className="group">
-                        <button onClick={() => openDM(friend)} className={`w-full flex items-center space-x-3 p-2 rounded-lg transition mb-1 ${selectedDM === friend ? 'bg-gray-700' : 'hover:bg-gray-700'}`}>
+                        <button 
+                          onClick={() => openDM(friend)} 
+                          className={`w-full flex items-center space-x-3 p-2 rounded-lg transition mb-1 ${selectedDM === friend ? 'bg-gray-700' : 'hover:bg-gray-700'}`}
+                        >
                           <div className="w-9 h-9 bg-gradient-to-br from-green-500 to-teal-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
                             {friend[0].toUpperCase()}
                           </div>
@@ -1779,7 +1705,16 @@
                             <p className="text-white text-sm font-medium">{friend}</p>
                             <p className="text-green-500 text-xs">В сети</p>
                           </div>
-                          <Mail className="w-4 h-4 text-gray-400 group-hover:text-white" />
+                          <div className="flex space-x-1">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); startDMCall(friend); }}
+                              className="p-1 bg-green-600 hover:bg-green-700 rounded transition opacity-0 group-hover:opacity-100"
+                              title="Позвонить"
+                            >
+                              <Phone className="w-3 h-3" />
+                            </button>
+                            <Mail className="w-4 h-4 text-gray-400 group-hover:text-white" />
+                          </div>
                         </button>
                       </div>
                     ))}
@@ -1802,7 +1737,7 @@
                         <p className={`text-xs ${
                           profileData.status === 'online' ? 'text-green-500' :
                           profileData.status === 'idle' ? 'text-yellow-500' :
-                          profileData.status === 'dnd' ? 'text-red-500' :
+                          profileData.status === 'dnd' : 'text-red-500' :
                           'text-gray-500'
                         }`}>
                           {profileData.status === 'online' ? 'В сети' :
@@ -1823,7 +1758,7 @@
               )}
 
               <div className="flex-1 flex flex-col">
-                {selectedChannel || selectedDM ? (
+                {(selectedChannel || selectedDM || inDMCall) ? (
                   <>
                     <div className="h-14 px-5 flex items-center justify-between border-b border-gray-800 bg-gray-800 shadow-md">
                       <div className="flex items-center space-x-3">
@@ -1831,22 +1766,38 @@
                         {selectedChannel && selectedChannel.type === 'voice' && <Volume2 className="w-6 h-6 text-gray-400" />}
                         {selectedChannel && selectedChannel.type === 'stage' && <Monitor className="w-6 h-6 text-gray-400" />}
                         {selectedDM && <Mail className="w-6 h-6 text-gray-400" />}
+                        {inDMCall && <Phone className="w-6 h-6 text-green-400" />}
                         <h3 className="text-white font-semibold">
-                          {selectedChannel ? selectedChannel.name : `@${selectedDM}`}
+                          {inDMCall ? `Звонок с ${dmCallWith}` : 
+                           selectedChannel ? selectedChannel.name : `@${selectedDM}`}
                         </h3>
                         {selectedChannel && selectedChannel.type === 'voice' && activeVoiceChannels[`${selectedServer.id}-${selectedChannel.id}`] && (
                           <span className="text-green-500 text-sm">
                             {activeVoiceChannels[`${selectedServer.id}-${selectedChannel.id}`].length} участников
                           </span>
                         )}
+                        {inDMCall && voiceChannelUsers.length > 0 && (
+                          <span className="text-green-500 text-sm">
+                            {voiceChannelUsers.length} участников
+                          </span>
+                        )}
                       </div>
+                      {inDMCall && (
+                        <button 
+                          onClick={leaveDMCall}
+                          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition flex items-center space-x-2"
+                        >
+                          <PhoneOff />
+                          <span>Завершить</span>
+                        </button>
+                      )}
                     </div>
 
-                    {selectedChannel && (selectedChannel.type === 'voice' || selectedChannel.type === 'stage') ? (
+                    {(selectedChannel && (selectedChannel.type === 'voice' || selectedChannel.type === 'stage')) || inDMCall ? (
                       <div className="flex-1 flex flex-col bg-gray-850">
                         <div className="flex-1 flex items-center justify-center p-8">
                           <div className="text-center max-w-4xl w-full">
-                            {!inVoiceChat ? (
+                            {!inVoiceChat && !inDMCall ? (
                               <>
                                 <div className="w-32 h-32 bg-gradient-to-br from-green-500 to-teal-600 rounded-full flex items-center justify-center mx-auto mb-6">
                                   {selectedChannel.type === 'voice' ? <Volume2 className="w-16 h-16" /> : <Monitor className="w-16 h-16" />}
@@ -1879,13 +1830,13 @@
                                 <div className="mb-6">
                                   <div className="flex items-center justify-center space-x-4 mb-6 flex-wrap">
                                     {(isVideoOn || isScreenSharing) && (
-                                      <div className="relative mb-4">
+                                      <div className="relative mb-4 video-container">
                                         <video 
                                           ref={localVideoRef} 
                                           autoPlay 
                                           muted 
                                           playsInline 
-                                          className="w-64 h-48 bg-gray-900 rounded-lg" 
+                                          className="w-full h-full bg-gray-900 rounded-lg" 
                                         />
                                         <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 px-2 py-1 rounded text-white text-sm">
                                           {currentUser.username} {isScreenSharing ? '(Демонстрация экрана)' : ''}
@@ -1895,13 +1846,18 @@
                                     
                                     {!isVideoOn && !isScreenSharing && (
                                       <div className="w-32 h-32 bg-gradient-to-br from-green-500 to-teal-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
-                                        <Volume2 className="w-16 h-16" />
+                                        {inDMCall ? <Phone className="w-16 h-16" /> : <Volume2 className="w-16 h-16" />}
                                       </div>
                                     )}
                                   </div>
 
-                                  <h3 className="text-white text-2xl font-bold mb-3">{selectedChannel.type === 'voice' ? 'Голосовой чат активен' : 'Трибуна активна'}</h3>
-                                  <p className="text-green-400 mb-6">Вы подключены к каналу</p>
+                                  <h3 className="text-white text-2xl font-bold mb-3">
+                                    {inDMCall ? 'Личный звонок активен' : 
+                                     selectedChannel.type === 'voice' ? 'Голосовой чат активен' : 'Трибуна активна'}
+                                  </h3>
+                                  <p className="text-green-400 mb-6">
+                                    {inDMCall ? `Вы в звонке с ${dmCallWith}` : 'Вы подключены к каналу'}
+                                  </p>
                                 </div>
 
                                 {renderVoiceChannelParticipants()}
@@ -1916,7 +1872,7 @@
                                   <button onClick={toggleScreenShare} className={`p-4 rounded-full transition ${isScreenSharing ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-700 hover:bg-gray-600'}`} title={isScreenSharing ? 'Остановить демонстрацию' : 'Демонстрация экрана'}>
                                     {isScreenSharing ? <MonitorOff /> : <Monitor />}
                                   </button>
-                                  <button onClick={leaveVoiceChannel} className="p-4 bg-red-600 hover:bg-red-700 rounded-full transition" title="Отключиться">
+                                  <button onClick={inDMCall ? leaveDMCall : leaveVoiceChannel} className="p-4 bg-red-600 hover:bg-red-700 rounded-full transition" title="Отключиться">
                                     <PhoneOff />
                                   </button>
                                 </div>
@@ -2000,6 +1956,7 @@
                         🔗 Приглашения на серверы<br />
                         👥 Отображение участников в реальном времени<br />
                         🔔 Система уведомлений<br />
+                        📞 Личные звонки<br />
                         <span className="text-green-400">☁️ Автоматическая синхронизация через GitHub</span>
                       </p>
                       <div className="flex items-center justify-center space-x-4">
