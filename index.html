@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatHub Online</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; }
+        #root { width: 100vw; height: 100vh; }
+        .notification {
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        video {
+            object-fit: cover;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Lucide Icons
+        const MessageCircle = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>;
+        const Users = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+        const Plus = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>;
+        const Hash = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/></svg>;
+        const Volume2 = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>;
+        const Mic = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>;
+        const MicOff = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/></svg>;
+        const Phone = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>;
+        const PhoneOff = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="22" x2="2" y1="2" y2="22"/></svg>;
+        const UserPlus = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>;
+        const Check = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6 9 17l-5-5"/></svg>;
+        const X = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>;
+        const LogOut = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>;
+        const Video = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m16 10 5-3v10l-5-3"/><rect width="12" height="12" x="2" y="6" rx="2"/></svg>;
+        const VideoOff = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.66 5H14a2 2 0 0 1 2 2v2.34l1 1L22 7v10"/><path d="m16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2l10 10Z"/><line x1="2" x2="22" y1="2" y2="22"/></svg>;
+        const Monitor = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>;
+        const MonitorOff = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 17H4a2 2 0 0 1-2-2V5c0-1.5 1-2 1-2"/><path d="M22 15V5a2 2 0 0 0-2-2H9"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="m2 2 20 20"/></svg>;
+        const Settings = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>;
+        const Send = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>;
+        const Edit = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>;
+        const Trash2 = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>;
+        const Copy = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>;
+        const Mail = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>;
+        const Bell = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>;
+        const User = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
+
+        // Используем localStorage как хранилище
+        const storage = {
+            get: async (key, shared) => {
+                const storageKey = shared ? `shared_${key}` : key;
+                const value = localStorage.getItem(storageKey);
+                return value ? { key, value, shared } : null;
+            },
+            set: async (key, value, shared) => {
+                const storageKey = shared ? `shared_${key}` : key;
+                localStorage.setItem(storageKey, value);
+                return { key, value, shared };
+            },
+            delete: async (key, shared) => {
+                const storageKey = shared ? `shared_${key}` : key;
+                localStorage.removeItem(storageKey);
+                return { key, deleted: true, shared };
+            }
+        };
+
+        window.storage = storage;
+
+        const ChatApp = () => {
+          const [currentView, setCurrentView] = useState('login');
+          const [currentUser, setCurrentUser] = useState(null);
+          const [servers, setServers] = useState([]);
+          const [selectedServer, setSelectedServer] = useState(null);
+          const [selectedChannel, setSelectedChannel] = useState(null);
+          const [selectedDM, setSelectedDM] = useState(null);
+          const [messages, setMessages] = useState({});
+          const [dmMessages, setDMMessages] = useState({});
+          const [messageInput, setMessageInput] = useState('');
+          const [friends, setFriends] = useState([]);
+          const [friendRequests, setFriendRequests] = useState([]);
+          const [searchUser, setSearchUser] = useState('');
+          const [inVoiceChat, setInVoiceChat] = useState(false);
+          const [isMuted, setIsMuted] = useState(false);
+          const [isVideoOn, setIsVideoOn] = useState(false);
+          const [isScreenSharing, setIsScreenSharing] = useState(false);
+          const [voiceChannelUsers, setVoiceChannelUsers] = useState([]);
+          const [showChannelSettings, setShowChannelSettings] = useState(false);
+          const [showInviteModal, setShowInviteModal] = useState(false);
+          const [inviteLink, setInviteLink] = useState('');
+          const [showProfileSettings, setShowProfileSettings] = useState(false);
+          const [profileData, setProfileData] = useState({ avatar: '', status: 'online' });
+          const [notifications, setNotifications] = useState([]);
+          const [rememberMe, setRememberMe] = useState(false);
+          const [activeVoiceChannels, setActiveVoiceChannels] = useState({});
+          const messagesEndRef = useRef(null);
+          const localVideoRef = useRef(null);
+          const localStreamRef = useRef(null);
+          const screenStreamRef = useRef(null);
+          const remoteVideosRef = useRef({});
+
+          useEffect(() => {
+            loadData();
+            checkRememberedUser();
+          }, []);
+
+          const checkRememberedUser = async () => {
+            try {
+              const remembered = await window.storage.get('rememberedUser', false);
+              if (remembered) {
+                const userData = JSON.parse(remembered.value);
+                setCurrentUser(userData);
+                setCurrentView('app');
+              }
+            } catch (error) {
+              console.log('No remembered user');
+            }
+          };
+
+          const loadData = async () => {
+            try {
+              const usersData = await window.storage.get('users', true);
+              if (!usersData) await window.storage.set('users', JSON.stringify([]), true);
+              
+              const serversData = await window.storage.get('servers', true);
+              if (!serversData) await window.storage.set('servers', JSON.stringify([]), true);
+              
+              const messagesData = await window.storage.get('messages', true);
+              if (!messagesData) await window.storage.set('messages', JSON.stringify({}), true);
+
+              const dmData = await window.storage.get('dm-messages', true);
+              if (!dmData) await window.storage.set('dm-messages', JSON.stringify({}), true);
+
+              const activeVCData = await window.storage.get('activeVoiceChannels', true);
+              if (activeVCData) setActiveVoiceChannels(JSON.parse(activeVCData.value));
+            } catch (error) {
+              console.log('Initializing storage');
+            }
+          };
+
+          const addNotification = (message, type = 'info') => {
+            const id = Date.now().toString();
+            const notification = { id, message, type };
+            setNotifications(prev => [...prev, notification]);
+            
+            setTimeout(() => {
+              setNotifications(prev => prev.filter(n => n.id !== id));
+            }, 5000);
+          };
+
+          const scrollToBottom = () => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+          };
+
+          useEffect(() => {
+            scrollToBottom();
+          }, [messages, dmMessages, selectedChannel, selectedDM]);
+
+          useEffect(() => {
+            if (!currentUser) return;
+            
+            const interval = setInterval(async () => {
+              await loadServers();
+              await loadMessages();
+              await loadFriends();
+              await loadDMMessages();
+              await updateVoiceChannels();
+            }, 2000);
+
+            return () => clearInterval(interval);
+          }, [currentUser, selectedServer, selectedChannel, selectedDM]);
+
+          const updateVoiceChannels = async () => {
+            try {
+              const result = await window.storage.get('activeVoiceChannels', true);
+              if (result) {
+                const activeChannels = JSON.parse(result.value);
+                setActiveVoiceChannels(activeChannels);
+                
+                // Обновляем список пользователей в текущем голосовом канале
+                if (selectedChannel && selectedChannel.type === 'voice' && inVoiceChat) {
+                  const channelKey = `${selectedServer.id}-${selectedChannel.id}`;
+                  if (activeChannels[channelKey]) {
+                    setVoiceChannelUsers(activeChannels[channelKey]);
+                  }
+                }
+              }
+            } catch (error) {
+              console.log('Error updating voice channels');
+            }
+          };
+
+          const loadServers = async () => {
+            try {
+              const result = await window.storage.get('servers', true);
+              if (result) {
+                const allServers = JSON.parse(result.value);
+                const userServers = allServers.filter(s => s.members.includes(currentUser.username));
+                setServers(userServers);
+              }
+            } catch (error) {
+              console.log('No servers yet');
+            }
+          };
+
+          const loadMessages = async () => {
+            if (!selectedChannel) return;
+            try {
+              const result = await window.storage.get('messages', true);
+              if (result) setMessages(JSON.parse(result.value));
+            } catch (error) {
+              console.log('No messages yet');
+            }
+          };
+
+          const loadDMMessages = async () => {
+            try {
+              const result = await window.storage.get('dm-messages', true);
+              if (result) setDMMessages(JSON.parse(result.value));
+            } catch (error) {
+              console.log('No DM messages yet');
+            }
+          };
+
+          const loadFriends = async () => {
+            try {
+              const result = await window.storage.get(`friends-${currentUser.username}`, true);
+              if (result) setFriends(JSON.parse(result.value));
+            } catch (error) {
+              setFriends([]);
+            }
+
+            try {
+              const reqResult = await window.storage.get(`friendrequests-${currentUser.username}`, true);
+              if (reqResult) setFriendRequests(JSON.parse(reqResult.value));
+            } catch (error) {
+              setFriendRequests([]);
+            }
+          };
+
+          const handleRegister = async (e) => {
+            e.preventDefault();
+            const username = e.target.username.value;
+            const email = e.target.email.value;
+            const password = e.target.password.value;
+
+            try {
+              const result = await window.storage.get('users', true);
+              const users = result ? JSON.parse(result.value) : [];
+              
+              if (users.find(u => u.username === username)) {
+                alert('Пользователь уже существует');
+                return;
+              }
+
+              users.push({ username, email, password, avatar: '', status: 'online' });
+              await window.storage.set('users', JSON.stringify(users), true);
+              
+              alert('Регистрация успешна! Войдите в систему');
+              setCurrentView('login');
+            } catch (error) {
+              alert('Ошибка регистрации');
+            }
+          };
+
+          const handleLogin = async (e) => {
+            e.preventDefault();
+            const username = e.target.username.value;
+            const password = e.target.password.value;
+            const remember = e.target.remember ? e.target.remember.checked : false;
+
+            try {
+              const result = await window.storage.get('users', true);
+              const users = result ? JSON.parse(result.value) : [];
+              const user = users.find(u => u.username === username && u.password === password);
+              
+              if (user) {
+                setCurrentUser(user);
+                setProfileData({ avatar: user.avatar || '', status: user.status || 'online' });
+                
+                if (remember) {
+                  await window.storage.set('rememberedUser', JSON.stringify(user), false);
+                } else {
+                  await window.storage.delete('rememberedUser', false);
+                }
+                
+                await loadServers();
+                await loadFriends();
+                setCurrentView('app');
+                addNotification(`Добро пожаловать, ${username}!`, 'success');
+              } else {
+                alert('Неверные данные');
+              }
+            } catch (error) {
+              alert('Ошибка входа');
+            }
+          };
+
+          const handleLogout = () => {
+            if (localStreamRef.current) {
+              localStreamRef.current.getTracks().forEach(track => track.stop());
+            }
+            if (screenStreamRef.current) {
+              screenStreamRef.current.getTracks().forEach(track => track.stop());
+            }
+            
+            // Удаляем пользователя из голосовых каналов
+            if (selectedChannel && selectedChannel.type === 'voice' && inVoiceChat) {
+              leaveVoiceChannel();
+            }
+            
+            setCurrentUser(null);
+            setServers([]);
+            setSelectedServer(null);
+            setSelectedChannel(null);
+            setMessages({});
+            setFriends([]);
+            setCurrentView('login');
+          };
+
+          const updateProfile = async () => {
+            try {
+              const result = await window.storage.get('users', true);
+              const users = result ? JSON.parse(result.value) : [];
+              const userIndex = users.findIndex(u => u.username === currentUser.username);
+              
+              if (userIndex !== -1) {
+                users[userIndex] = { ...users[userIndex], ...profileData };
+                await window.storage.set('users', JSON.stringify(users), true);
+                setCurrentUser(users[userIndex]);
+                
+                // Обновляем запомненного пользователя, если есть
+                const remembered = await window.storage.get('rememberedUser', false);
+                if (remembered) {
+                  await window.storage.set('rememberedUser', JSON.stringify(users[userIndex]), false);
+                }
+                
+                setShowProfileSettings(false);
+                addNotification('Профиль обновлен!', 'success');
+              }
+            } catch (error) {
+              alert('Ошибка обновления профиля');
+            }
+          };
+
+          const createServer = async () => {
+            const name = prompt('Название сервера:');
+            if (!name) return;
+
+            try {
+              const result = await window.storage.get('servers', true);
+              const allServers = result ? JSON.parse(result.value) : [];
+              
+              const serverId = Date.now().toString();
+              allServers.push({
+                id: serverId,
+                name,
+                owner: currentUser.username,
+                members: [currentUser.username],
+                channels: [
+                  { id: '1', name: 'общий', type: 'text' },
+                  { id: '2', name: 'Голосовой', type: 'voice' }
+                ]
+              });
+
+              await window.storage.set('servers', JSON.stringify(allServers), true);
+              await loadServers();
+              addNotification(`Сервер "${name}" создан!`, 'success');
+            } catch (error) {
+              alert('Ошибка создания сервера');
+            }
+          };
+
+          const createChannel = async (type) => {
+            const name = prompt(`Название ${type === 'text' ? 'текстового' : type === 'voice' ? 'голосового' : 'трибуны'} канала:`);
+            if (!name) return;
+
+            try {
+              const result = await window.storage.get('servers', true);
+              const allServers = result ? JSON.parse(result.value) : [];
+              const serverIndex = allServers.findIndex(s => s.id === selectedServer.id);
+              
+              if (serverIndex !== -1) {
+                const newChannel = {
+                  id: Date.now().toString(),
+                  name,
+                  type
+                };
+                allServers[serverIndex].channels.push(newChannel);
+                await window.storage.set('servers', JSON.stringify(allServers), true);
+                await loadServers();
+                addNotification(`Канал "${name}" создан!`, 'success');
+              }
+            } catch (error) {
+              alert('Ошибка создания канала');
+            }
+          };
+
+          const deleteChannel = async (channelId) => {
+            if (!confirm('Удалить канал?')) return;
+
+            try {
+              const result = await window.storage.get('servers', true);
+              const allServers = result ? JSON.parse(result.value) : [];
+              const serverIndex = allServers.findIndex(s => s.id === selectedServer.id);
+              
+              if (serverIndex !== -1) {
+                allServers[serverIndex].channels = allServers[serverIndex].channels.filter(c => c.id !== channelId);
+                await window.storage.set('servers', JSON.stringify(allServers), true);
+                if (selectedChannel?.id === channelId) setSelectedChannel(null);
+                await loadServers();
+                addNotification('Канал удален', 'info');
+              }
+            } catch (error) {
+              alert('Ошибка удаления канала');
+            }
+          };
+
+          const generateInvite = () => {
+            const link = `${window.location.origin}${window.location.pathname}?invite=${selectedServer.id}`;
+            setInviteLink(link);
+            setShowInviteModal(true);
+          };
+
+          const copyInviteLink = () => {
+            navigator.clipboard.writeText(inviteLink);
+            addNotification('Ссылка скопирована в буфер обмена!', 'success');
+          };
+
+          const sendDirectInvite = async (friendUsername) => {
+            if (!selectedServer) return;
+            
+            try {
+              const result = await window.storage.get('dm-messages', true);
+              const allDMs = result ? JSON.parse(result.value) : {};
+              
+              const dmKey = [currentUser.username, friendUsername].sort().join('-');
+              if (!allDMs[dmKey]) allDMs[dmKey] = [];
+
+              const inviteMessage = {
+                id: Date.now().toString(),
+                author: currentUser.username,
+                content: '',
+                timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+                type: 'invite',
+                serverId: selectedServer.id,
+                serverName: selectedServer.name
+              };
+
+              allDMs[dmKey].push(inviteMessage);
+              await window.storage.set('dm-messages', JSON.stringify(allDMs), true);
+              setDMMessages(allDMs);
+              addNotification(`Приглашение отправлено ${friendUsername}!`, 'success');
+            } catch (error) {
+              alert('Ошибка отправки приглашения');
+            }
+          };
+
+          const handleInviteAccept = async (serverId, serverName) => {
+            try {
+              const result = await window.storage.get('servers', true);
+              const allServers = result ? JSON.parse(result.value) : [];
+              const serverIndex = allServers.findIndex(s => s.id === serverId);
+              
+              if (serverIndex !== -1 && !allServers[serverIndex].members.includes(currentUser.username)) {
+                allServers[serverIndex].members.push(currentUser.username);
+                await window.storage.set('servers', JSON.stringify(allServers), true);
+                await loadServers();
+                addNotification(`Вы присоединились к серверу "${serverName}"!`, 'success');
+              }
+            } catch (error) {
+              alert('Ошибка присоединения');
+            }
+          };
+
+          const joinServerByInvite = async (serverId) => {
+            try {
+              const result = await window.storage.get('servers', true);
+              const allServers = result ? JSON.parse(result.value) : [];
+              const serverIndex = allServers.findIndex(s => s.id === serverId);
+              
+              if (serverIndex !== -1 && !allServers[serverIndex].members.includes(currentUser.username)) {
+                allServers[serverIndex].members.push(currentUser.username);
+                await window.storage.set('servers', JSON.stringify(allServers), true);
+                await loadServers();
+                addNotification('Вы присоединились к серверу!', 'success');
+              }
+            } catch (error) {
+              alert('Ошибка присоединения');
+            }
+          };
+
+          useEffect(() => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const inviteId = urlParams.get('invite');
+            if (inviteId && currentUser) {
+              joinServerByInvite(inviteId);
+              // Убираем параметр из URL
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
+          }, [currentUser]);
+
+          const sendMessage = async () => {
+            if (!messageInput.trim()) return;
+
+            try {
+              if (selectedChannel) {
+                const result = await window.storage.get('messages', true);
+                const allMessages = result ? JSON.parse(result.value) : {};
+                
+                const channelKey = `${selectedServer.id}-${selectedChannel.id}`;
+                if (!allMessages[channelKey]) allMessages[channelKey] = [];
+
+                allMessages[channelKey].push({
+                  id: Date.now().toString(),
+                  author: currentUser.username,
+                  content: messageInput,
+                  timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+                });
+
+                await window.storage.set('messages', JSON.stringify(allMessages), true);
+                setMessages(allMessages);
+              } else if (selectedDM) {
+                const result = await window.storage.get('dm-messages', true);
+                const allDMs = result ? JSON.parse(result.value) : {};
+                
+                const dmKey = [currentUser.username, selectedDM].sort().join('-');
+                if (!allDMs[dmKey]) allDMs[dmKey] = [];
+
+                allDMs[dmKey].push({
+                  id: Date.now().toString(),
+                  author: currentUser.username,
+                  content: messageInput,
+                  timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+                });
+
+                await window.storage.set('dm-messages', JSON.stringify(allDMs), true);
+                setDMMessages(allDMs);
+              }
+              
+              setMessageInput('');
+            } catch (error) {
+              console.log('Error sending message');
+            }
+          };
+
+          const sendFriendRequest = async () => {
+            if (!searchUser.trim()) return;
+
+            try {
+              const result = await window.storage.get('users', true);
+              const users = result ? JSON.parse(result.value) : [];
+              const targetUser = users.find(u => u.username === searchUser);
+
+              if (!targetUser) {
+                alert('Пользователь не найден');
+                return;
+              }
+
+              if (targetUser.username === currentUser.username) {
+                alert('Нельзя добавить себя в друзья');
+                return;
+              }
+
+              try {
+                const reqResult = await window.storage.get(`friendrequests-${targetUser.username}`, true);
+                const requests = reqResult ? JSON.parse(reqResult.value) : [];
+                
+                if (requests.includes(currentUser.username)) {
+                  alert('Запрос уже отправлен');
+                  return;
+                }
+
+                requests.push(currentUser.username);
+                await window.storage.set(`friendrequests-${targetUser.username}`, JSON.stringify(requests), true);
+                addNotification(`Запрос в друзья отправлен ${searchUser}!`, 'success');
+                setSearchUser('');
+              } catch (error) {
+                await window.storage.set(`friendrequests-${targetUser.username}`, JSON.stringify([currentUser.username]), true);
+                addNotification(`Запрос в друзья отправлен ${searchUser}!`, 'success');
+                setSearchUser('');
+              }
+            } catch (error) {
+              alert('Ошибка отправки запроса');
+            }
+          };
+
+          const acceptFriendRequest = async (username) => {
+            try {
+              const myFriends = friends.includes(username) ? friends : [...friends, username];
+              await window.storage.set(`friends-${currentUser.username}`, JSON.stringify(myFriends), true);
+              
+              try {
+                const theirResult = await window.storage.get(`friends-${username}`, true);
+                const theirFriends = theirResult ? JSON.parse(theirResult.value) : [];
+                if (!theirFriends.includes(currentUser.username)) {
+                  theirFriends.push(currentUser.username);
+                  await window.storage.set(`friends-${username}`, JSON.stringify(theirFriends), true);
+                }
+              } catch (error) {
+                await window.storage.set(`friends-${username}`, JSON.stringify([currentUser.username]), true);
+              }
+
+              const updatedRequests = friendRequests.filter(r => r !== username);
+              await window.storage.set(`friendrequests-${currentUser.username}`, JSON.stringify(updatedRequests), true);
+              await loadFriends();
+              addNotification(`${username} теперь ваш друг!`, 'success');
+            } catch (error) {
+              alert('Ошибка принятия запроса');
+            }
+          };
+
+          const declineFriendRequest = async (username) => {
+            const updatedRequests = friendRequests.filter(r => r !== username);
+            await window.storage.set(`friendrequests-${currentUser.username}`, JSON.stringify(updatedRequests), true);
+            setFriendRequests(updatedRequests);
+            addNotification(`Запрос от ${username} отклонен`, 'info');
+          };
+
+          const openDM = (username) => {
+            setSelectedServer(null);
+            setSelectedChannel(null);
+            setSelectedDM(username);
+          };
+
+          const toggleVideo = async () => {
+            if (!isVideoOn) {
+              try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localStreamRef.current = stream;
+                if (localVideoRef.current) {
+                  localVideoRef.current.srcObject = stream;
+                }
+                setIsVideoOn(true);
+                addNotification('Камера включена', 'success');
+              } catch (error) {
+                alert('Не удалось получить доступ к камере/микрофону');
+              }
+            } else {
+              if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach(track => track.stop());
+              }
+              setIsVideoOn(false);
+              addNotification('Камера выключена', 'info');
+            }
+          };
+
+          const toggleScreenShare = async () => {
+            if (!isScreenSharing) {
+              try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                screenStreamRef.current = stream;
+                setIsScreenSharing(true);
+                
+                // Показываем экран в том же видео элементе
+                if (localVideoRef.current) {
+                  localVideoRef.current.srcObject = stream;
+                }
+                
+                stream.getVideoTracks()[0].onended = () => {
+                  setIsScreenSharing(false);
+                  // Возвращаем камеру, если она была включена
+                  if (isVideoOn) {
+                    toggleVideo();
+                    setTimeout(toggleVideo, 100);
+                  }
+                };
+                addNotification('Демонстрация экрана начата', 'success');
+              } catch (error) {
+                alert('Не удалось начать демонстрацию экрана');
+              }
+            } else {
+              if (screenStreamRef.current) {
+                screenStreamRef.current.getTracks().forEach(track => track.stop());
+              }
+              setIsScreenSharing(false);
+              addNotification('Демонстрация экрана остановлена', 'info');
+            }
+          };
+
+          const joinVoiceChannel = async () => {
+            setInVoiceChat(true);
+            
+            // Добавляем пользователя в активные голосовые каналы
+            const channelKey = `${selectedServer.id}-${selectedChannel.id}`;
+            try {
+              const result = await window.storage.get('activeVoiceChannels', true);
+              const activeChannels = result ? JSON.parse(result.value) : {};
+              
+              if (!activeChannels[channelKey]) {
+                activeChannels[channelKey] = [];
+              }
+              
+              if (!activeChannels[channelKey].includes(currentUser.username)) {
+                activeChannels[channelKey].push(currentUser.username);
+                await window.storage.set('activeVoiceChannels', JSON.stringify(activeChannels), true);
+                setActiveVoiceChannels(activeChannels);
+                setVoiceChannelUsers(activeChannels[channelKey]);
+              }
+              
+              addNotification(`Вы присоединились к ${selectedChannel.name}`, 'success');
+            } catch (error) {
+              console.log('Error joining voice channel');
+            }
+            
+            try {
+              const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+              localStreamRef.current = stream;
+            } catch (error) {
+              console.log('Mic access denied');
+            }
+          };
+
+          const leaveVoiceChannel = () => {
+            if (localStreamRef.current) {
+              localStreamRef.current.getTracks().forEach(track => track.stop());
+            }
+            if (screenStreamRef.current) {
+              screenStreamRef.current.getTracks().forEach(track => track.stop());
+            }
+            
+            // Удаляем пользователя из активных голосовых каналов
+            if (selectedChannel) {
+              const channelKey = `${selectedServer.id}-${selectedChannel.id}`;
+              removeUserFromVoiceChannel(channelKey, currentUser.username);
+            }
+            
+            setInVoiceChat(false);
+            setIsVideoOn(false);
+            setIsScreenSharing(false);
+            setIsMuted(false);
+            setVoiceChannelUsers([]);
+            addNotification('Вы покинули голосовой канал', 'info');
+          };
+
+          const removeUserFromVoiceChannel = async (channelKey, username) => {
+            try {
+              const result = await window.storage.get('activeVoiceChannels', true);
+              const activeChannels = result ? JSON.parse(result.value) : {};
+              
+              if (activeChannels[channelKey]) {
+                activeChannels[channelKey] = activeChannels[channelKey].filter(u => u !== username);
+                if (activeChannels[channelKey].length === 0) {
+                  delete activeChannels[channelKey];
+                }
+                await window.storage.set('activeVoiceChannels', JSON.stringify(activeChannels), true);
+                setActiveVoiceChannels(activeChannels);
+              }
+            } catch (error) {
+              console.log('Error removing user from voice channel');
+            }
+          };
+
+          const toggleMute = () => {
+            if (localStreamRef.current) {
+              const audioTrack = localStreamRef.current.getAudioTracks()[0];
+              if (audioTrack) {
+                audioTrack.enabled = !audioTrack.enabled;
+                setIsMuted(!audioTrack.enabled);
+                addNotification(audioTrack.enabled ? 'Микрофон включен' : 'Микрофон выключен', 'info');
+              }
+            }
+          };
+
+          // Функция для отображения участников в голосовом канале
+          const renderVoiceChannelParticipants = () => {
+            if (!voiceChannelUsers.length) return null;
+            
+            return (
+              <div className="mt-6 grid grid-cols-2 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
+                {voiceChannelUsers.map((user, idx) => (
+                  <div key={idx} className="bg-gray-800 rounded-lg p-4 flex flex-col items-center">
+                    <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-xl mb-2">
+                      {user[0].toUpperCase()}
+                    </div>
+                    <span className="text-white text-sm font-medium truncate w-full text-center">{user}</span>
+                    {user === currentUser.username && (
+                      <div className="mt-2 flex space-x-2">
+                        {!isMuted && <Volume2 className="w-4 h-4 text-green-400" />}
+                        {isMuted && <MicOff className="w-4 h-4 text-red-400" />}
+                        {isVideoOn && <Video className="w-4 h-4 text-green-400" />}
+                        {isScreenSharing && <Monitor className="w-4 h-4 text-green-400" />}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          };
+
+          if (currentView === 'login') {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 flex items-center justify-center p-4">
+                <div className="bg-gray-900 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+                  <div className="text-center mb-8">
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full mb-4">
+                      <MessageCircle />
+                    </div>
+                    <h1 className="text-3xl font-bold text-white mb-2">ChatHub Online</h1>
+                    <p className="text-gray-400">Онлайн версия с видео/аудио чатом</p>
+                  </div>
+
+                  <form onSubmit={handleLogin} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Имя пользователя</label>
+                      <input name="username" type="text" required className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-indigo-500 transition" placeholder="Ваше имя" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Пароль</label>
+                      <input name="password" type="password" required className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-indigo-500 transition" placeholder="••••••••" />
+                    </div>
+                    <div className="flex items-center">
+                      <input id="remember" name="remember" type="checkbox" className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-700 rounded bg-gray-800" />
+                      <label htmlFor="remember" className="ml-2 block text-sm text-gray-300">
+                        Запомнить меня
+                      </label>
+                    </div>
+                    <button type="submit" className="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold hover:from-indigo-700 hover:to-purple-700 transition">
+                      Войти
+                    </button>
+                  </form>
+
+                  <div className="mt-6 text-center">
+                    <p className="text-gray-400">
+                      Нет аккаунта?{' '}
+                      <button onClick={() => setCurrentView('register')} className="text-indigo-400 hover:text-indigo-300 font-semibold">
+                        Зарегистрироваться
+                      </button>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          if (currentView === 'register') {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 flex items-center justify-center p-4">
+                <div className="bg-gray-900 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+                  <div className="text-center mb-8">
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full mb-4">
+                      <MessageCircle />
+                    </div>
+                    <h1 className="text-3xl font-bold text-white mb-2">Регистрация</h1>
+                    <p className="text-gray-400">Создайте новый аккаунт</p>
+                  </div>
+
+                  <form onSubmit={handleRegister} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Имя пользователя</label>
+                      <input name="username" type="text" required className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-indigo-500 transition" placeholder="Ваше имя" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Email</label>
+                      <input name="email" type="email" required className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-indigo-500 transition" placeholder="email@example.com" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Пароль</label>
+                      <input name="password" type="password" required className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-indigo-500 transition" placeholder="••••••••" />
+                    </div>
+                    <button type="submit" className="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold hover:from-indigo-700 hover:to-purple-700 transition">
+                      Создать аккаунт
+                    </button>
+                  </form>
+
+                  <div className="mt-6 text-center">
+                    <p className="text-gray-400">
+                      Уже есть аккаунт?{' '}
+                      <button onClick={() => setCurrentView('login')} className="text-indigo-400 hover:text-indigo-300 font-semibold">
+                        Войти
+                      </button>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          const currentMessages = selectedChannel 
+            ? messages[`${selectedServer?.id}-${selectedChannel.id}`] || []
+            : selectedDM
+            ? dmMessages[[currentUser.username, selectedDM].sort().join('-')] || []
+            : [];
+
+          return (
+            <div className="h-screen bg-gray-900 flex overflow-hidden">
+              {/* Уведомления */}
+              <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
+                {notifications.map(notification => (
+                  <div key={notification.id} className={`notification p-4 rounded-lg shadow-lg border-l-4 ${
+                    notification.type === 'success' ? 'bg-green-900 border-green-500 text-green-200' :
+                    notification.type === 'error' ? 'bg-red-900 border-red-500 text-red-200' :
+                    'bg-blue-900 border-blue-500 text-blue-200'
+                  }`}>
+                    <div className="flex items-center">
+                      <Bell className="w-5 h-5 mr-2" />
+                      <span>{notification.message}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Модальное окно настроек профиля */}
+              {showProfileSettings && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                  <div className="bg-gray-800 rounded-xl p-6 w-96">
+                    <h3 className="text-white text-xl font-bold mb-4">Настройки профиля</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Аватар (URL)</label>
+                        <input 
+                          type="text" 
+                          value={profileData.avatar} 
+                          onChange={(e) => setProfileData({...profileData, avatar: e.target.value})}
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-indigo-500" 
+                          placeholder="https://example.com/avatar.jpg" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Статус</label>
+                        <select 
+                          value={profileData.status} 
+                          onChange={(e) => setProfileData({...profileData, status: e.target.value})}
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-indigo-500"
+                        >
+                          <option value="online">В сети</option>
+                          <option value="idle">Неактивен</option>
+                          <option value="dnd">Не беспокоить</option>
+                          <option value="offline">Не в сети</option>
+                        </select>
+                      </div>
+                      <div className="flex space-x-2">
+                        <button onClick={updateProfile} className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition">
+                          Сохранить
+                        </button>
+                        <button onClick={() => setShowProfileSettings(false)} className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition">
+                          Отмена
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {showInviteModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                  <div className="bg-gray-800 rounded-xl p-6 w-96">
+                    <h3 className="text-white text-xl font-bold mb-4">Пригласить на сервер</h3>
+                    <div className="bg-gray-900 p-3 rounded-lg mb-4 flex items-center justify-between">
+                      <span className="text-gray-300 text-sm truncate flex-1">{inviteLink}</span>
+                      <button onClick={copyInviteLink} className="ml-2 p-2 bg-indigo-600 hover:bg-indigo-700 rounded transition">
+                        <Copy />
+                      </button>
+                    </div>
+                    <div className="mb-4">
+                      <p className="text-gray-300 text-sm mb-2">Или отправить приглашение другу:</p>
+                      <select 
+                        onChange={(e) => e.target.value && sendDirectInvite(e.target.value)}
+                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-indigo-500"
+                      >
+                        <option value="">Выберите друга</option>
+                        {friends.map(friend => (
+                          <option key={friend} value={friend}>{friend}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <button onClick={() => setShowInviteModal(false)} className="w-full py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition">
+                      Закрыть
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="w-20 bg-gray-950 flex flex-col items-center py-4 space-y-3">
+                <button onClick={() => { setSelectedServer(null); setSelectedChannel(null); setSelectedDM(null); }} className="w-14 h-14 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center hover:rounded-xl transition-all duration-200">
+                  <Users />
+                </button>
+                
+                <div className="w-10 h-0.5 bg-gray-800 rounded-full" />
+
+                {servers.map(server => (
+                  <button key={server.id} onClick={() => { setSelectedServer(server); setSelectedChannel(server.channels[0]); setSelectedDM(null); }} className={`w-14 h-14 ${selectedServer?.id === server.id ? 'bg-indigo-600 rounded-xl' : 'bg-gray-800 rounded-3xl hover:rounded-xl hover:bg-indigo-700'} flex items-center justify-center text-white font-bold transition-all duration-200`}>
+                    {server.name[0].toUpperCase()}
+                  </button>
+                ))}
+
+                <button onClick={createServer} className="w-14 h-14 bg-gray-800 rounded-3xl hover:rounded-xl hover:bg-green-600 flex items-center justify-center transition-all duration-200">
+                  <Plus className="text-green-500" />
+                </button>
+              </div>
+
+              {selectedServer ? (
+                <div className="w-60 bg-gray-800 flex flex-col">
+                  <div className="h-14 px-4 flex items-center justify-between border-b border-gray-900 shadow-lg">
+                    <h2 className="text-white font-bold truncate">{selectedServer.name}</h2>
+                    {selectedServer.owner === currentUser.username && (
+                      <button onClick={() => setShowChannelSettings(!showChannelSettings)} className="p-1 hover:bg-gray-700 rounded transition">
+                        <Settings className="w-5 h-5 text-gray-400" />
+                      </button>
+                    )}
+                  </div>
+
+                  {showChannelSettings && selectedServer.owner === currentUser.username && (
+                    <div className="p-3 bg-gray-750 border-b border-gray-900">
+                      <p className="text-gray-400 text-xs font-semibold uppercase mb-2">Управление</p>
+                      <div className="space-y-1">
+                        <button onClick={() => createChannel('text')} className="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition flex items-center space-x-2">
+                          <Hash className="w-4 h-4" />
+                          <span>Создать текстовый</span>
+                        </button>
+                        <button onClick={() => createChannel('voice')} className="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition flex items-center space-x-2">
+                          <Volume2 className="w-4 h-4" />
+                          <span>Создать голосовой</span>
+                        </button>
+                        <button onClick={() => createChannel('stage')} className="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition flex items-center space-x-2">
+                          <Monitor className="w-4 h-4" />
+                          <span>Создать трибуну</span>
+                        </button>
+                        <button onClick={generateInvite} className="w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded transition flex items-center space-x-2">
+                          <UserPlus className="w-4 h-4" />
+                          <span>Пригласить людей</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="flex-1 overflow-y-auto p-3 space-y-1">
+                    {selectedServer.channels.map(channel => (
+                      <div key={channel.id} className="flex items-center group">
+                        <button onClick={() => setSelectedChannel(channel)} className={`flex-1 px-3 py-2 rounded-lg flex items-center space-x-3 ${selectedChannel?.id === channel.id ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'} transition`}>
+                          {channel.type === 'text' && <Hash className="w-5 h-5" />}
+                          {channel.type === 'voice' && <Volume2 className="w-5 h-5" />}
+                          {channel.type === 'stage' && <Monitor className="w-5 h-5" />}
+                          <span className="font-medium truncate">{channel.name}</span>
+                          {activeVoiceChannels[`${selectedServer.id}-${channel.id}`] && channel.type === 'voice' && (
+                            <span className="text-green-500 text-xs font-bold">
+                              {activeVoiceChannels[`${selectedServer.id}-${channel.id}`].length}
+                            </span>
+                          )}
+                        </button>
+                        {selectedServer.owner === currentUser.username && showChannelSettings && (
+                          <button onClick={() => deleteChannel(channel.id)} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-600 rounded transition">
+                            <Trash2 className="w-4 h-4 text-gray-400 hover:text-white" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="p-3 bg-gray-900 border-t border-gray-950">
+                    <div className="flex items-center space-x-3 px-2 py-2 bg-gray-800 rounded-lg">
+                      <div 
+                        className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm cursor-pointer"
+                        onClick={() => setShowProfileSettings(true)}
+                      >
+                        {profileData.avatar ? (
+                          <img src={profileData.avatar} alt="Avatar" className="w-full h-full rounded-full" />
+                        ) : (
+                          currentUser.username[0].toUpperCase()
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-semibold truncate">{currentUser.username}</p>
+                        <p className={`text-xs ${
+                          profileData.status === 'online' ? 'text-green-500' :
+                          profileData.status === 'idle' ? 'text-yellow-500' :
+                          profileData.status === 'dnd' ? 'text-red-500' :
+                          'text-gray-500'
+                        }`}>
+                          {profileData.status === 'online' ? 'В сети' :
+                           profileData.status === 'idle' ? 'Неактивен' :
+                           profileData.status === 'dnd' ? 'Не беспокоить' :
+                           'Не в сети'}
+                        </p>
+                      </div>
+                      <button onClick={() => setShowProfileSettings(true)} className="p-1.5 hover:bg-gray-700 rounded transition" title="Настройки">
+                        <Settings className="w-4 h-4 text-gray-400 hover:text-white" />
+                      </button>
+                      <button onClick={handleLogout} className="p-1.5 hover:bg-gray-700 rounded transition" title="Выйти">
+                        <LogOut className="w-4 h-4 text-gray-400 hover:text-white" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="w-60 bg-gray-800 flex flex-col">
+                  <div className="h-14 px-4 flex items-center border-b border-gray-900 shadow-lg">
+                    <h2 className="text-white font-bold">Личные сообщения</h2>
+                  </div>
+                  
+                  <div className="p-4 border-b border-gray-700">
+                    <div className="flex space-x-2">
+                      <input type="text" value={searchUser} onChange={(e) => setSearchUser(e.target.value)} placeholder="Имя пользователя" className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500" />
+                      <button onClick={sendFriendRequest} className="p-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition">
+                        <UserPlus />
+                      </button>
+                    </div>
+                  </div>
+
+                  {friendRequests.length > 0 && (
+                    <div className="p-3 border-b border-gray-700">
+                      <h3 className="text-gray-400 text-xs font-semibold uppercase mb-2">Запросы в друзья</h3>
+                      {friendRequests.map(username => (
+                        <div key={username} className="flex items-center justify-between p-2 bg-gray-900 rounded-lg mb-2">
+                          <span className="text-white text-sm">{username}</span>
+                          <div className="flex space-x-1">
+                            <button onClick={() => acceptFriendRequest(username)} className="p-1.5 bg-green-600 hover:bg-green-700 rounded transition">
+                              <Check />
+                            </button>
+                            <button onClick={() => declineFriendRequest(username)} className="p-1.5 bg-red-600 hover:bg-red-700 rounded transition">
+                              <X />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex-1 overflow-y-auto p-3">
+                    <h3 className="text-gray-400 text-xs font-semibold uppercase mb-2">Все друзья — {friends.length}</h3>
+                    {friends.map(friend => (
+                      <div key={friend} className="group">
+                        <button onClick={() => openDM(friend)} className={`w-full flex items-center space-x-3 p-2 rounded-lg transition mb-1 ${selectedDM === friend ? 'bg-gray-700' : 'hover:bg-gray-700'}`}>
+                          <div className="w-9 h-9 bg-gradient-to-br from-green-500 to-teal-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                            {friend[0].toUpperCase()}
+                          </div>
+                          <div className="flex-1 text-left">
+                            <p className="text-white text-sm font-medium">{friend}</p>
+                            <p className="text-green-500 text-xs">В сети</p>
+                          </div>
+                          <Mail className="w-4 h-4 text-gray-400 group-hover:text-white" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="p-3 bg-gray-900 border-t border-gray-950">
+                    <div className="flex items-center space-x-3 px-2 py-2 bg-gray-800 rounded-lg">
+                      <div 
+                        className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm cursor-pointer"
+                        onClick={() => setShowProfileSettings(true)}
+                      >
+                        {profileData.avatar ? (
+                          <img src={profileData.avatar} alt="Avatar" className="w-full h-full rounded-full" />
+                        ) : (
+                          currentUser.username[0].toUpperCase()
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-semibold truncate">{currentUser.username}</p>
+                        <p className={`text-xs ${
+                          profileData.status === 'online' ? 'text-green-500' :
+                          profileData.status === 'idle' ? 'text-yellow-500' :
+                          profileData.status === 'dnd' ? 'text-red-500' :
+                          'text-gray-500'
+                        }`}>
+                          {profileData.status === 'online' ? 'В сети' :
+                           profileData.status === 'idle' ? 'Неактивен' :
+                           profileData.status === 'dnd' ? 'Не беспокоить' :
+                           'Не в сети'}
+                        </p>
+                      </div>
+                      <button onClick={() => setShowProfileSettings(true)} className="p-1.5 hover:bg-gray-700 rounded transition" title="Настройки">
+                        <Settings className="w-4 h-4 text-gray-400 hover:text-white" />
+                      </button>
+                      <button onClick={handleLogout} className="p-1.5 hover:bg-gray-700 rounded transition" title="Выйти">
+                        <LogOut className="w-4 h-4 text-gray-400 hover:text-white" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex-1 flex flex-col">
+                {selectedChannel || selectedDM ? (
+                  <>
+                    <div className="h-14 px-5 flex items-center justify-between border-b border-gray-800 bg-gray-800 shadow-md">
+                      <div className="flex items-center space-x-3">
+                        {selectedChannel && selectedChannel.type === 'text' && <Hash className="w-6 h-6 text-gray-400" />}
+                        {selectedChannel && selectedChannel.type === 'voice' && <Volume2 className="w-6 h-6 text-gray-400" />}
+                        {selectedChannel && selectedChannel.type === 'stage' && <Monitor className="w-6 h-6 text-gray-400" />}
+                        {selectedDM && <Mail className="w-6 h-6 text-gray-400" />}
+                        <h3 className="text-white font-semibold">
+                          {selectedChannel ? selectedChannel.name : `@${selectedDM}`}
+                        </h3>
+                        {selectedChannel && selectedChannel.type === 'voice' && activeVoiceChannels[`${selectedServer.id}-${selectedChannel.id}`] && (
+                          <span className="text-green-500 text-sm">
+                            {activeVoiceChannels[`${selectedServer.id}-${selectedChannel.id}`].length} участников
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {selectedChannel && (selectedChannel.type === 'voice' || selectedChannel.type === 'stage') ? (
+                      <div className="flex-1 flex flex-col bg-gray-850">
+                        <div className="flex-1 flex items-center justify-center p-8">
+                          <div className="text-center max-w-4xl w-full">
+                            {!inVoiceChat ? (
+                              <>
+                                <div className="w-32 h-32 bg-gradient-to-br from-green-500 to-teal-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                                  {selectedChannel.type === 'voice' ? <Volume2 className="w-16 h-16" /> : <Monitor className="w-16 h-16" />}
+                                </div>
+                                <h3 className="text-white text-2xl font-bold mb-3">{selectedChannel.name}</h3>
+                                <p className="text-gray-400 mb-6">{selectedChannel.type === 'voice' ? 'Голосовой канал с поддержкой видео и демонстрации экрана' : 'Трибуна - выступайте перед аудиторией'}</p>
+                                <button onClick={joinVoiceChannel} className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold transition flex items-center space-x-2 mx-auto">
+                                  <Phone />
+                                  <span>Подключиться</span>
+                                </button>
+                                
+                                {/* Показываем участников, даже если мы не в канале */}
+                                {activeVoiceChannels[`${selectedServer.id}-${selectedChannel.id}`] && (
+                                  <div className="mt-8">
+                                    <h4 className="text-white text-lg font-semibold mb-4">Участники в канале:</h4>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                      {activeVoiceChannels[`${selectedServer.id}-${selectedChannel.id}`].map((user, idx) => (
+                                        <div key={idx} className="bg-gray-800 rounded-lg p-3 flex items-center space-x-3">
+                                          <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                                            {user[0].toUpperCase()}
+                                          </div>
+                                          <span className="text-white text-sm font-medium">{user}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <div className="mb-6">
+                                  <div className="flex items-center justify-center space-x-4 mb-6 flex-wrap">
+                                    {(isVideoOn || isScreenSharing) && (
+                                      <div className="relative mb-4">
+                                        <video 
+                                          ref={localVideoRef} 
+                                          autoPlay 
+                                          muted 
+                                          playsInline 
+                                          className="w-64 h-48 bg-gray-900 rounded-lg" 
+                                        />
+                                        <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 px-2 py-1 rounded text-white text-sm">
+                                          {currentUser.username} {isScreenSharing ? '(Демонстрация экрана)' : ''}
+                                        </div>
+                                      </div>
+                                    )}
+                                    
+                                    {!isVideoOn && !isScreenSharing && (
+                                      <div className="w-32 h-32 bg-gradient-to-br from-green-500 to-teal-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+                                        <Volume2 className="w-16 h-16" />
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <h3 className="text-white text-2xl font-bold mb-3">{selectedChannel.type === 'voice' ? 'Голосовой чат активен' : 'Трибуна активна'}</h3>
+                                  <p className="text-green-400 mb-6">Вы подключены к каналу</p>
+                                </div>
+
+                                {/* Участники голосового канала */}
+                                {renderVoiceChannelParticipants()}
+
+                                <div className="flex items-center justify-center space-x-3 mt-8">
+                                  <button onClick={toggleMute} className={`p-4 rounded-full transition ${isMuted ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-700 hover:bg-gray-600'}`} title={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}>
+                                    {isMuted ? <MicOff /> : <Mic />}
+                                  </button>
+                                  <button onClick={toggleVideo} className={`p-4 rounded-full transition ${isVideoOn ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-700 hover:bg-gray-600'}`} title={isVideoOn ? 'Выключить камеру' : 'Включить камеру'}>
+                                    {isVideoOn ? <Video /> : <VideoOff />}
+                                  </button>
+                                  <button onClick={toggleScreenShare} className={`p-4 rounded-full transition ${isScreenSharing ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-700 hover:bg-gray-600'}`} title={isScreenSharing ? 'Остановить демонстрацию' : 'Демонстрация экрана'}>
+                                    {isScreenSharing ? <MonitorOff /> : <Monitor />}
+                                  </button>
+                                  <button onClick={leaveVoiceChannel} className="p-4 bg-red-600 hover:bg-red-700 rounded-full transition" title="Отключиться">
+                                    <PhoneOff />
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-850">
+                          {currentMessages.length === 0 ? (
+                            <div className="text-center text-gray-500 mt-10">
+                              {selectedChannel ? (
+                                <>
+                                  <Hash className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                                  <p className="text-lg font-semibold">Добро пожаловать в #{selectedChannel.name}!</p>
+                                  <p className="text-sm mt-2">Это начало канала. Отправьте первое сообщение!</p>
+                                </>
+                              ) : (
+                                <>
+                                  <Mail className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                                  <p className="text-lg font-semibold">Начало переписки с @{selectedDM}</p>
+                                  <p className="text-sm mt-2">Отправьте первое личное сообщение!</p>
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            currentMessages.map(msg => (
+                              <div key={msg.id} className="flex space-x-3 hover:bg-gray-800 p-2 rounded transition">
+                                <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
+                                  {msg.author[0].toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-baseline space-x-2">
+                                    <span className="text-white font-semibold">{msg.author}</span>
+                                    <span className="text-gray-500 text-xs">{msg.timestamp}</span>
+                                  </div>
+                                  {msg.type === 'invite' ? (
+                                    <div className="bg-gray-800 p-3 rounded-lg mt-2 border border-indigo-700">
+                                      <p className="text-white font-semibold">Приглашение на сервер</p>
+                                      <p className="text-gray-300 text-sm mt-1">Присоединиться к "{msg.serverName}"</p>
+                                      <button 
+                                        onClick={() => handleInviteAccept(msg.serverId, msg.serverName)}
+                                        className="mt-2 px-4 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm transition"
+                                      >
+                                        Принять приглашение
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <p className="text-gray-300 break-words">{msg.content}</p>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                          <div ref={messagesEndRef} />
+                        </div>
+
+                        <div className="p-4 bg-gray-800 border-t border-gray-700">
+                          <div className="flex space-x-3">
+                            <input type="text" value={messageInput} onChange={(e) => setMessageInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && sendMessage()} placeholder={selectedChannel ? `Сообщение в #${selectedChannel.name}` : `Сообщение @${selectedDM}`} className="flex-1 px-4 py-3 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                            <button onClick={sendMessage} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition flex items-center space-x-2">
+                              <Send />
+                              <span>Отправить</span>
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center bg-gray-850">
+                    <div className="text-center">
+                      <Users className="w-24 h-24 text-gray-700 mx-auto mb-6" />
+                      <h2 className="text-2xl font-bold text-white mb-3">Добро пожаловать в ChatHub Online!</h2>
+                      <p className="text-gray-400 mb-6 max-w-md">
+                        🎤 Голосовые чаты с видео и демонстрацией экрана<br />
+                        💬 Личные сообщения и текстовые каналы<br />
+                        🎭 Трибуны для выступлений<br />
+                        🔗 Приглашения на серверы<br />
+                        👥 Отображение участников в реальном времени<br />
+                        🔔 Система уведомлений
+                      </p>
+                      <div className="flex items-center justify-center space-x-4">
+                        <div className="text-center">
+                          <div className="w-12 h-12 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-2">
+                            <Plus className="text-green-500" />
+                          </div>
+                          <p className="text-sm text-gray-400">Создать сервер</p>
+                        </div>
+                        <div className="text-center">
+                          <div className="w-12 h-12 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-2">
+                            <UserPlus className="text-indigo-500" />
+                          </div>
+                          <p className="text-sm text-gray-400">Добавить друзей</p>
+                        </div>
+                        <div className="text-center">
+                          <div className="w-12 h-12 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-2">
+                            <Mail className="text-purple-500" />
+                          </div>
+                          <p className="text-sm text-gray-400">Личные сообщения</p>
+                        </div>
+                        <div className="text-center">
+                          <div className="w-12 h-12 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-2">
+                            <User className="text-blue-500" />
+                          </div>
+                          <p className="text-sm text-gray-400">Настройки профиля</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        };
+
+        ReactDOM.render(<ChatApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>
